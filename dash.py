@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from query import *
-
+# python -m streamlit run dash.py
 #Consulta no banco de dados
 query = "SELECT * FROM registro"
 
@@ -14,6 +14,8 @@ df = conexao(query)
 if st.button("Atualizar dados"):
     df = conexao(query)
 
+
+df['tempo_registro'] = pd.to_datetime(df['tempo_registro'])
 # Menu Lateral
 st.sidebar.header("Selecione a informação para gerar o gráfico")
 
@@ -21,14 +23,14 @@ st.sidebar.header("Selecione a informação para gerar o gráfico")
 # Selectbox-> cria uma caixa de seleção na barra lateral
 colunaX = st.sidebar.selectbox(
     "Eixo X",
-    options=["umidade", "temperatura", "pressao", "altitude", "co2", "poeira"],
+    options=["umidade", "temperatura", "pressao", "altitude", "co2", "poeira", "tempo_registro"],
     index = 0
 
 )
 
 colunaY = st.sidebar.selectbox(
     "Eixo Y",
-    options=["umidade", "temperatura", "pressao", "altitude" "co2", "poeira"],
+    options=["umidade", "temperatura", "pressao", "altitude" ,"co2", "poeira", "tempo_registro"],
     index = 1
 
 )
@@ -128,6 +130,25 @@ if filtros("co2"):
         step = 0.1    
     )
 
+
+if filtros("tempo_registro"):
+    # Converter os valores mínimo e máximo para timestamp
+    min_timestamp = df["tempo_registro"].min().timestamp()
+    max_timestamp = df["tempo_registro"].max().timestamp()
+    
+    tempo_registro_range = st.sidebar.slider(
+        "Tempo Registro",
+        min_value=min_timestamp,  # Valor Mínimo como timestamp.
+        max_value=max_timestamp,  # Valor Máximo como timestamp.
+        value=(min_timestamp, max_timestamp),  # Faixa de Valores selecionado.
+        format= "Data"  # Formato de exibição
+    )
+    # Converter o range de volta para datetime
+    tempo_registro_range = (pd.to_datetime(tempo_registro_range[0], unit='s'),
+                            pd.to_datetime(tempo_registro_range[1], unit='s'))
+    
+
+
 df_selecionado = df.copy()
 #cria uma cópia do df original
 
@@ -172,72 +193,152 @@ if filtros("pressao"):
         (df_selecionado["pressao"] <= pressao_range[1])
     ]
 
-#graficos 
+if filtros("tempo_registro"):
+    df_selecionado = df_selecionado[
+        (df_selecionado["tempo_registro"] >= tempo_registro_range[0]) &
+        (df_selecionado["tempo_registro"] <= tempo_registro_range[1])
+    ] 
+
+# Gráficos
 def Home():
     with st.expander("Tabela"):
         mostrarDados = st.multiselect(
             "Filtro: ",
             df_selecionado.columns,
-            default = [],
-            key = "showData_home"
+            default= [],
+            key="showData_home"
         )
 
         if mostrarDados:
             st.write(df_selecionado[mostrarDados])
-    
+
+
+    # Calculos estatisticos
     if not df_selecionado.empty:
         media_umidade = df_selecionado["umidade"].mean()
         media_temperatura = df_selecionado["temperatura"].mean()
         media_co2 = df_selecionado["co2"].mean()
+        
 
-        media1, media2, media3 = st.columns(3 , gap="large")
+        media1, media2, media3 = st.columns(3, gap="large")
 
         with media1:
-            st.info("Média de registros de umidade", icon="☔")
+            st.info("Média de Registros de Umidade", icon='🌧️')
             st.metric(label="Média", value=f"{media_umidade:.2f}")
 
         with media2:
-            st.info("Média de registros de Temperatura", icon="☔")
+            st.info("Média de Registros de Temperatura", icon='🌡️')
             st.metric(label="Média", value=f"{media_temperatura:.2f}")
 
         with media3:
-            st.info("Média de registros de co2", icon="☔")
+            st.info("Média de Registros do C02", icon='🌿')
             st.metric(label="Média", value=f"{media_co2:.2f}")
 
-        st.markdown("""----------""")
+        st.markdown("""------------""")
 
-# graficos
+#graficos 
 def graficos():
     st.title("Dashboard Monitoramento")
-
-    aba1, = st.tabs(["Gráfico de Linha"])
-
+       
+    aba1, aba2, aba3, aba4  = st.tabs(
+        ["Gráfico de Barras",
+        "Gráfico de Linhas",
+        "Gráfico de Dispersão",
+        "Gráfico Mapa de Calor"]
+        )
+    
     with aba1:
         if df_selecionado.empty:
-            st.write("Nenhum dado está disponivel para gerar o gráfico")
+            st.write("Nenhum dado está disponível para gerar gráficos")
             return
         
         if colunaX == colunaY:
-            st.warning("Selecione uma opção diferente, para os eixos X e Y.")
+            st.warning("Selecione uma opção diferente para os eixos X e Y")
+            return
+        
+        try:           
+            grupo_dados1 = df_selecionado.groupby(by=[colunaX]).size().reset_index(name="contagem")
+            fig_valores = px.bar(
+                grupo_dados1,       # De onde vem os dados.
+                x = colunaX,        # Eixo X
+                y = "contagem",     # Eixo Y com o nome que nós renomeamos no GrupBy
+                orientation = "v",  # Orientação do Gráfico
+                title = f"Contagem de Registros por {colunaX.capitalize()}", # Titulo do gráfico => A função capitalize() deixa tudo em maiúsculo. 
+                color_discrete_sequence = ["#0083b9"],       # Altera a cor 
+                template = "plotly_white"
+            )
+            
+        except Exception as e:
+            st.error(f"Erro ao criar gráfico de barras:  {e}")
+        st.plotly_chart(fig_valores, use_container_width=True)
+
+    with aba2:
+        if df_selecionado.empty:
+            st.write("Nenhum dado está disponível para gerar gráficos")
+            return
+
+        if colunaX == colunaY:
+            st.warning("Selecione uma opção diferente para os eixos X e Y")
+            return
+
+        try:
+            grupo_dados2 = df_selecionado.groupby(by=[colunaX])[colunaY].mean().reset_index(name=colunaY)
+            fig_valores2 = px.line(
+                grupo_dados2,
+                x=colunaX,
+                y=colunaY,
+                title=f"Gráfico de Linhas: {colunaX.capitalize()} vs {colunaY.capitalize()}",
+                line_shape='linear',  # Tipo de linha
+                markers=True  # Para mostrar marcadores nos pontos
+            )
+        except Exception as e:
+            st.error(f"Erro ao criar gráfico de linhas: {e}")
+        st.plotly_chart(fig_valores2, use_container_width=True)
+ 
+    with aba3:
+        if df_selecionado.empty:
+            st.write("Nenhum dado está disponível para gerar gráficos")
+            return
+
+        if colunaX == colunaY:
+            st.warning("Selecione uma opção diferente para os eixos X e Y")
+            return
+
+        try:
+            grupo_dados3 = df_selecionado.groupby(by=[colunaX]).size().reset_index(name=colunaY)
+            fig_valores3 = px.scatter(grupo_dados3, x = colunaX, y = colunaY)    
+            
+            st.plotly_chart(fig_valores3, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Erro ao criar gráfico de disperção: {e}")
+    
+    with aba4:
+        if df_selecionado.empty:
+            st.write("Nenhum dado está disponível para gerar gráficos")
+            return
+        
+        if colunaX == colunaY:
+            st.warning("Selecione uma opção diferente para os eixos X e Y")
             return
         
         try:
-            grupo_dados1 = df_selecionado.groupby(by=[colunaX]).size().reset_index(name="contagem")
-            
-            fig_valores = px.bar(
-                grupo_dados1,
-                x = colunaX,
-                y = "contagem",
-                orientation = "h",
-                title =(f"Contagem de Registros por {colunaX.capitalize()}"),
-                color_discrete_sequence=["#0083b8"],
-                template= "plotly_white"
+            # Agrupando os dados para criar o mapa de calor
+            grupo_dados4 = df_selecionado.groupby([colunaX, colunaY]).size().reset_index(name='contagem')
+            # Criando o mapa de calor
+            fig_valores4 = px.density_heatmap(
+                grupo_dados4,
+                x=colunaX,
+                y=colunaY,
+                z='contagem',
+                title=f"Mapa de Calor: {colunaX.capitalize()} vs {colunaY.capitalize()}",
+                color_continuous_scale='Viridis'  # Alterar a escala de cores se desejado
             )
+            st.plotly_chart(fig_valores4, use_container_width=True)
 
         except Exception as e:
-            st.error(f"Erro ao criar gráfico de linha: {e} ")
-            
-            st.plotly_chart(fig_valores, use_container_width=True)
+            st.error(f"Erro ao criar o mapa de calor: {e}")
 
 Home()
 graficos()
+

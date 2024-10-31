@@ -1,5 +1,5 @@
 # pip install mysql-connector-python
-# pip install streamlit
+# pip install streamlit -m run dash.py
 
 import mysql.connector
 import pandas as pd
