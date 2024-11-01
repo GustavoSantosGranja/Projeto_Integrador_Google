@@ -3,6 +3,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from query import *
+import smtplib
+import email.message
 # python -m streamlit run dash.py
 #Consulta no banco de dados
 query = "SELECT * FROM registro"
@@ -16,6 +18,7 @@ if st.button("Atualizar dados"):
 
 
 df['tempo_registro'] = pd.to_datetime(df['tempo_registro'])
+
 # Menu Lateral
 st.sidebar.header("Selecione a informação para gerar o gráfico")
 
@@ -236,6 +239,37 @@ def Home():
 
         st.markdown("""------------""")
 
+def enviar_email():
+    temperaturas_fora_do_range = df["temperatura"][(df["temperatura"].lt(21)) | (df["temperatura"].gt(24))]
+
+    # Verifica se há temperaturas fora do intervalo e adiciona ao corpo do e-mail
+    if not temperaturas_fora_do_range.empty:
+        temperaturas_texto = ", ".join(str(temp) for temp in temperaturas_fora_do_range)
+        corpo_email = f"""
+        <p>Alerta de Temperatura</p>   
+        <p>A temperatura está fora dos parâmetros devidos dentro do DataCenter.</p>
+        <p>Com base nos valores fora do intervalo permitido (21-24°C). A temperatura atual é de: {temperaturas_texto}</p>
+        """
+
+        msg = email.message.Message()
+        msg["Subject"] = "Alerta de Temperatura"
+        msg["From"] = 'integradorp664@gmail.com'
+        msg["To"] = 'gustavosgranja30@gmail.com'
+        password = 'wgzqiurceaqrtlis'
+        msg.add_header('Content-Type', 'text/html')
+        msg.set_payload(corpo_email)
+
+        try:
+            s = smtplib.SMTP('smtp.gmail.com: 587')
+            s.starttls()
+            s.login(msg['From'], password)
+            s.sendmail(msg['From'], [msg['To']], msg.as_string().encode('utf-8'))
+            s.quit()
+            st.success('Email Enviado com sucesso!')
+        except Exception as e:
+            st.error(f'Erro ao enviar email: {e}')
+
+
 #graficos 
 def graficos():
     st.title("Dashboard Monitoramento")
@@ -339,6 +373,8 @@ def graficos():
         except Exception as e:
             st.error(f"Erro ao criar o mapa de calor: {e}")
 
+
+enviar_email()
 Home()
 graficos()
 
